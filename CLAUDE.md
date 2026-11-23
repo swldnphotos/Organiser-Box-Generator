@@ -30,4 +30,4 @@ Generator for 3D-printable boxes that fit the Magnusson Compartment Organiser Ca
 ## Working rules
 - Keep the JS and Python engines in step: a geometry change in one usually needs the same change in the other.
 - Run `node tests/geometry.test.js` after any geometry change.
-- The add-in can only be tested inside Fusion. Install it by copying the folder into Fusion's AddIns directory.
+- The add-in can only be tested inside Fusion. Install it by copying the folder into Fusion's AddIns directory. Start it from Utilities > Add-Ins or by restarting Fusion. Never call its `run()` from an MCP or one-off script: Fusion drops a script's event handlers when the script ends, so the buttons appear but do nothing.
