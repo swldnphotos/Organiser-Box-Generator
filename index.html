@@ -180,7 +180,8 @@
       <div class="mapwrap"><svg id="casemap" viewBox="0 0 310 236" role="img" aria-label="Case layout: click a cell to set the box up for that position"></svg></div>
       <div class="hint" id="posLabel" style="font-weight:500;color:var(--ink)"></div>
       <div class="maptools"><button class="btn small" id="btnJoin" type="button">Join into one box</button><button class="btn small" id="btnSplit" type="button">Split</button><button class="btn small" id="btnRemove" type="button">Remove</button></div>
-      <div class="maptools"><button class="btn small" id="btnFill" type="button">Fill empty cells</button><button class="btn small" id="selAll" type="button">Select all</button><button class="btn small" id="selNone" type="button">Clear</button></div>
+      <div class="maptools"><button class="btn small" id="btnFill" type="button">Fill empty cells</button>
+          <button class="btn small" id="btnFusion" type="button" title="Save this layout as a file the Fusion add-in's Organiser Layout command can build">Export for Fusion</button><button class="btn small" id="selAll" type="button">Select all</button><button class="btn small" id="selNone" type="button">Clear</button></div>
       <div class="hint">Click a box to edit it. Shift-click or drag to select a block, Cmd/Ctrl-click to add. Join turns the selected cells in a column into one box (1–3 cells long); double-click does the same. <span id="layoutInfo"></span></div>
       <fieldset><legend>Box shape</legend>
       <div class="row"><label for="cells">Cell lengths (mm)</label><input type="text" id="cells"></div>
@@ -812,6 +813,24 @@ const browserDownloads = {
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   },
 };
+// layout file for the Fusion add-in's "Organiser Layout" command: engine parameters and placement for every box
+async function exportLayout() {
+  if (!state.boxes.length) { $('status').textContent = 'Nothing to export yet.'; return; }
+  const data = {
+    app: 'organiser-box-generator', version: 1, name: 'Organiser layout', units: 'mm',
+    note: 'Origin is the front centre of the case; offset is where each box starts (front edge, centre line).',
+    boxes: state.boxes.map(b => {
+      const lab = b.o.label !== 'none' && b.o.label_text ? ' ' + b.o.label_text : '';
+      return { name: (boxTag(b) + lab).trim(), position: boxName(b), params: paramsFor(b), offset: placement(b) };
+    }),
+  };
+  if (!downloads) { $('status').textContent = 'Downloads are not available in this view.'; return; }
+  try {
+    await downloads.save({ filename: 'organiser-layout.json', data: new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }) });
+    $('status').textContent = `Exported ${data.boxes.length} boxes for Fusion (Solid > Create > Organiser Layout).`;
+  } catch (e) { $('status').textContent = e && e.code === 'declined' ? 'Export cancelled.' : 'Export failed: ' + (e && (e.message || e.code)); }
+}
+$('btnFusion').addEventListener('click', exportLayout);
 async function initDownloads() {
   const inClaude = /(^|\.)claude(usercontent)?\.(ai|com)$/.test(location.hostname) || window.parent !== window;
   if (!inClaude) { downloads = browserDownloads; return; }
@@ -1055,6 +1074,7 @@ function openMenu(ev, hit) {
     sep();
     item('case', 'Show case', { check: $('showCase').checked });
     item('xray', 'See-through boxes', { check: $('xray').checked });
+    item('fusion', 'Export layout for Fusion');
     item('dl:stl', 'Download everything as STL');
     item('dl:step', 'Download everything as STEP');
   }
@@ -1106,6 +1126,7 @@ menu.addEventListener('click', ev => {
   else if (a === 'addjoin') { const empty = state.sel.filter(k => !boxAt(k)); for (const r of runsFrom(empty)) state.boxes.push(newBox(r, state.defaults)); setSelection(empty); }
   else if (a === 'all') setSelection(allCells());
   else if (a === 'fill') $('btnFill').click();
+  else if (a === 'fusion') exportLayout();
   else if (a.startsWith('dl:')) { downloadItems(built.filter(i => !bs.length || bs.includes(i.box)), a.slice(3)); }
   if (keep) openMenu({ clientX: menu.getBoundingClientRect().left, clientY: menu.getBoundingClientRect().top }, lastHit);
   else closeMenu();

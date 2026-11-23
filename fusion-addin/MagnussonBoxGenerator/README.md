@@ -67,3 +67,15 @@ On the Inside tab, tick **Make the compartments along separate boxes** to print 
 ## Name tags on separate boxes
 
 When *Make the compartments along separate boxes* is ticked, **Name tag per box** gives each piece its own label, front piece first, separated by `|`. For example, `M3 | | WASHERS` labels pieces 1 and 3, and piece 2 keeps the shared label from the Inside tab (or has none). A piece given its own tag gets a front label shelf even if the shared label is off. Its component name ends with the tag, so the STEP file names match.
+
+## Building a whole layout (Organiser Layout)
+
+1. Plan the organiser in the web app (https://swldnphotos.github.io/Organiser-Box-Generator/).
+2. Tap **Export for Fusion** under the case map, or right-click the background of the 3D view and choose *Export layout for Fusion*. This saves `organiser-layout.json`.
+3. In Fusion, go to **Solid → Create → Organiser Layout**, choose the file and click **Build layout**.
+
+Every box is built where it sits in the case, with the origin at the front centre. You can group the boxes in one "Organiser layout" component, or place them beside whatever is already in the design. The layout keeps all the web app settings: separate boxes and their name tags, trays, wall mounts, compartments, wall thickness and clearances.
+
+## Saving files
+
+Both commands can save files after building: **None**, **STEP**, **STL** (binary, high refinement) or **STEP + STL**. You choose a folder, which the add-in remembers, and it saves one file per box or piece.

@@ -37,6 +37,12 @@ COLS = [('C1', 'C1 (left column)'), ('C2', 'C2'), ('C3', 'C3 (centre)'), ('C4', 
         ('DL', 'Front corner, left (D)'), ('DR', 'Front corner, right (D)'), ('', 'Custom')]
 ROWS = ['Row 3 (front)', 'Row 2', 'Row 1 (back)']
 CORNER_TYPES = ['Standard', 'Chamfer', 'Handle notch', 'Round']
+EXPORT_FORMATS = ['None', 'STEP', 'STL', 'STEP + STL']
+
+LAYOUT_ID = 'MagnussonLayoutCmd'
+LAYOUT_NAME = 'Organiser Layout'
+LAYOUT_TIP = ('Build every box of a layout planned in the web app (Download > "Export layout for Fusion"), '
+              'placed where it sits in the case.')
 
 
 def _std():
@@ -77,7 +83,7 @@ DEFAULT_UI = {
     'tray_finger': True,
     'tray_clearance': 0.4,
     'wall_mount': False,
-    'export_step': False,
+    'export_format': 'None',
     'export_folder': '',
     'mount_clearance': 0.25,
     'side_clearance': 0.0,
@@ -240,7 +246,7 @@ def build_dialog(cmd, s):
     t = tab.children
     t.addBoolValueInput('wall_mount', 'Wall mount piece for the hanging slot', True, '', s['wall_mount'])
     t.addValueInput('mount_clearance', 'Mount clearance', 'mm', _mm(s['mount_clearance']))
-    t.addBoolValueInput('export_step', 'Save a STEP file of each box after building', True, '', s['export_step'])
+    _dropdown(t, 'export_format', 'Save files after building', EXPORT_FORMATS, s.get('export_format', 'None'))
     g = t.addGroupCommandInput('grpAdv', 'Advanced')
     g.isExpanded = False
     gc = g.children
@@ -323,9 +329,9 @@ def read_dialog(inputs):
               'tray_clearance', 'mount_clearance', 'split_gap', 'side_clearance', 'end_clearance', 'wall', 'taper_inset', 'taper_height', 'notch_depth',
               'notch_width'):
         s[k] = round(_val_mm(inputs, k), 4)
-    for k in ('rail', 'tray', 'tray_finger', 'wall_mount', 'separate', 'export_step'):
+    for k in ('rail', 'tray', 'tray_finger', 'wall_mount', 'separate'):
         s[k] = _bool(inputs, k)
-    for k in ('slots', 'slot_sides', 'label', 'label_style', 'tray_cover', 'tray_window', 'place'):
+    for k in ('slots', 'slot_sides', 'label', 'label_style', 'tray_cover', 'tray_window', 'place', 'export_format'):
         s[k] = _sel(inputs, k)
     for k in ('comp_along', 'comp_across', 'tray_dividers'):
         s[k] = _int(inputs, k)
@@ -458,34 +464,48 @@ class InputChangedHandler(adsk.core.InputChangedEventHandler):
             pass
 
 
-def export_step(design, occs, s):
-    """Ask for a folder (remembering the last one) and save each built box component as a STEP file."""
+def export_files(design, occs, s, fmt):
+    """Ask for a folder (remembering the last one) and save each built component as STEP and/or STL."""
+    if not fmt or fmt == 'None' or not occs:
+        return []
     dlg = _ui.createFolderDialog()
-    dlg.title = 'Folder for the STEP files'
-    prev = s.get('export_folder') or ''
+    dlg.title = 'Folder for the %s files' % fmt
+    prev = s.get('export_folder') or load_settings().get('export_folder') or ''
     if prev and os.path.isdir(prev):
         dlg.initialDirectory = prev
     if dlg.showDialog() != adsk.core.DialogResults.DialogOK:
-        return ['STEP export skipped (no folder chosen).']
+        return ['File export skipped (no folder chosen).']
     folder = dlg.folder
-    s['export_folder'] = folder
-    save_settings(s)
+    st = load_settings()
+    st['export_folder'] = folder
+    save_settings(st)
     em, saved, notes = design.exportManager, [], []
+    exts = [x for x in ('step', 'stl') if x.upper() in fmt]
+
+    def free(base, ext):
+        path, n = os.path.join(folder, base + '.' + ext), 2
+        while os.path.exists(path):
+            path, n = os.path.join(folder, '%s_%d.%s' % (base, n, ext)), n + 1
+        return path
+
     for occ in occs:
         comp = occ.component
-        safe = re.sub(r'[^A-Za-z0-9_.-]+', '_', comp.name).strip('_') or 'box'
-        path = os.path.join(folder, safe + '.step')
-        n = 2
-        while os.path.exists(path):
-            path = os.path.join(folder, '%s_%d.step' % (safe, n))
-            n += 1
-        opts = em.createSTEPExportOptions(path, comp)
-        if em.execute(opts):
-            saved.append(os.path.basename(path))
-        else:
-            notes.append('Could not save ' + path)
+        base = re.sub(r'[^A-Za-z0-9_.-]+', '_', comp.name).strip('_') or 'box'
+        for ext in exts:
+            path = free(base, ext)
+            if ext == 'step':
+                opts = em.createSTEPExportOptions(path, comp)
+            else:
+                opts = em.createSTLExportOptions(comp, path)
+                opts.meshRefinement = adsk.fusion.MeshRefinementSettings.MeshRefinementHigh
+                opts.isBinaryFormat = True
+                opts.sendToPrintUtility = False
+            if em.execute(opts):
+                saved.append(os.path.basename(path))
+            else:
+                notes.append('Could not save ' + path)
     if saved:
-        notes.append('Saved STEP: ' + ', '.join(saved) + ' in ' + folder)
+        notes.append('Saved %d file(s) in %s' % (len(saved), folder))
     return notes
 
 
@@ -495,6 +515,7 @@ class ExecuteHandler(adsk.core.CommandEventHandler):
             inputs = args.command.commandInputs
             s = read_dialog(inputs)
             s['export_folder'] = load_settings().get('export_folder', '')
+            s['layout_file'] = load_settings().get('layout_file', '')
             save_settings(s)
             params = to_engine_params(s)
             design = adsk.fusion.Design.cast(_app.activeProduct)
@@ -503,8 +524,7 @@ class ExecuteHandler(adsk.core.CommandEventHandler):
                 return
             off = free_spot(design) if s['place'].startswith('Beside') else (0.0, 0.0)
             occs, warnings = E.build_split(design, params, off)
-            if s['export_step']:
-                warnings += export_step(design, occs, s)
+            warnings += export_files(design, occs, s, s.get('export_format'))
             if warnings:
                 _ui.messageBox('Built %d box(es) with notes:\n\n- ' % len(occs) + '\n- '.join(warnings), CMD_NAME)
         except Exception:
@@ -517,28 +537,158 @@ class DestroyHandler(adsk.core.CommandEventHandler):
 
 
 # --------------------------------------------------------------------------------------
+# Organiser Layout: build a whole layout exported from the web app
+# --------------------------------------------------------------------------------------
+def read_layout(path):
+    with open(path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    boxes = data.get('boxes') if isinstance(data, dict) else None
+    if not boxes:
+        raise ValueError('This file has no boxes in it. Export it from the web app with "Export layout for Fusion".')
+    return data, boxes
+
+
+class LayoutCreatedHandler(adsk.core.CommandCreatedEventHandler):
+    def notify(self, args):
+        try:
+            cmd = args.command
+            cmd.okButtonText = 'Build layout'
+            cmd.setDialogMinimumSize(360, 220)
+            s = load_settings()
+            inputs = cmd.commandInputs
+            inputs.addTextBoxCommandInput('lay_help', '', 'Plan the organiser in the web app, then use '
+                                          '<b>Export layout for Fusion</b> (right-click the background of the 3D view, '
+                                          'or the button under the case map) and choose that file here.', 4, True)
+            inputs.addStringValueInput('lay_file', 'Layout file', s.get('layout_file', ''))
+            inputs.addBoolValueInput('lay_browse', 'Choose file…', False, '', False)
+            inputs.addBoolValueInput('lay_group', 'Put all boxes in one "Organiser layout" component', True, '', True)
+            _dropdown(inputs, 'lay_place', 'Place', ['As in the case (origin = front centre)', 'Beside existing geometry'],
+                      'As in the case (origin = front centre)')
+            _dropdown(inputs, 'lay_export', 'Save files after building', EXPORT_FORMATS, s.get('export_format', 'None'))
+            inputs.addTextBoxCommandInput('lay_info', '', '', 2, True)
+            _layout_info(inputs)
+            for ev, h in ((cmd.inputChanged, LayoutInputHandler()), (cmd.execute, LayoutExecuteHandler()),
+                          (cmd.destroy, DestroyHandler())):
+                ev.add(h)
+                _handlers.append(h)
+        except Exception:
+            _ui.messageBox('Organiser Layout dialog failed:\n' + traceback.format_exc())
+
+
+def _layout_info(inputs):
+    path = _str(inputs, 'lay_file')
+    info = inputs.itemById('lay_info')
+    if not path:
+        info.formattedText = 'No file chosen yet.'
+        return
+    try:
+        _, boxes = read_layout(path)
+        pieces = sum(max(1, len(E.divider_fractions(b['params'].get('divider_ratios', ''), b['params'].get('dividers', 0))) + 1)
+                     if b['params'].get('separate') else 1 for b in boxes)
+        info.formattedText = '%d boxes in the layout, %d printable pieces.' % (len(boxes), pieces)
+    except Exception as ex:
+        info.formattedText = '<span style="color:#c33">%s</span>' % ex
+
+
+class LayoutInputHandler(adsk.core.InputChangedEventHandler):
+    def notify(self, args):
+        try:
+            inputs = args.inputs
+            if args.input.id == 'lay_browse':
+                dlg = _ui.createFileDialog()
+                dlg.title = 'Layout exported from the web app'
+                dlg.filter = 'Layout (*.json)'
+                cur = _str(inputs, 'lay_file')
+                if cur and os.path.isdir(os.path.dirname(cur)):
+                    dlg.initialDirectory = os.path.dirname(cur)
+                if dlg.showOpen() == adsk.core.DialogResults.DialogOK:
+                    inputs.itemById('lay_file').value = dlg.filename
+            if args.input.id in ('lay_browse', 'lay_file'):
+                _layout_info(inputs)
+        except Exception:
+            pass
+
+
+class LayoutExecuteHandler(adsk.core.CommandEventHandler):
+    def notify(self, args):
+        try:
+            inputs = args.command.commandInputs
+            path = _str(inputs, 'lay_file')
+            st = load_settings()
+            st['layout_file'] = path
+            st['export_format'] = _sel(inputs, 'lay_export')
+            save_settings(st)
+            data, boxes = read_layout(path)
+            design = adsk.fusion.Design.cast(_app.activeProduct)
+            if design is None:
+                _ui.messageBox('Open or create a Fusion design first.')
+                return
+            base = free_spot(design) if _sel(inputs, 'lay_place').startswith('Beside') else (0.0, 0.0)
+            if base != (0.0, 0.0):
+                base = (base[0] + 166.25, base[1] + 63.8)     # the layout spans x -166 to 166, y -64 upwards
+            parent = None
+            if _bool(inputs, 'lay_group'):
+                grp = design.rootComponent.occurrences.addNewComponent(adsk.core.Matrix3D.create())
+                grp.component.name = data.get('name') or 'Organiser layout'
+                parent = grp.component
+            prog = _ui.createProgressDialog()
+            prog.cancelButtonText = 'Stop'
+            prog.isBackgroundTranslucent = False
+            prog.show('Organiser Layout', 'Building box %v of %m', 0, len(boxes), 0)
+            occs, notes = [], []
+            for i, bx in enumerate(boxes):
+                if prog.wasCancelled:
+                    notes.append('Stopped after %d of %d boxes.' % (i, len(boxes)))
+                    break
+                prog.progressValue = i
+                p = dict(bx['params'])
+                p['name'] = bx.get('name') or 'Box %d' % (i + 1)
+                ox, oy = bx.get('offset', [0, 0])
+                try:
+                    o, w = E.build_split(design, p, (base[0] + ox, base[1] + oy), parent)
+                    occs += o
+                    notes += ['%s: %s' % (p['name'], x) for x in w]
+                except Exception as ex:
+                    notes.append('%s failed: %s' % (p['name'], ex))
+                adsk.doEvents()
+            prog.hide()
+            notes += export_files(design, occs, st, _sel(inputs, 'lay_export'))
+            msg = 'Built %d printable pieces from %d boxes.' % (len(occs), len(boxes))
+            _ui.messageBox(msg + ('\n\n- ' + '\n- '.join(notes) if notes else ''), LAYOUT_NAME)
+        except Exception:
+            _ui.messageBox('Organiser Layout build failed:\n' + traceback.format_exc())
+
+
+# --------------------------------------------------------------------------------------
 # add-in entry points
 # --------------------------------------------------------------------------------------
+def _add_command(cid, name, tip, handler_cls):
+    old = _ui.commandDefinitions.itemById(cid)
+    if old:
+        old.deleteMe()
+    res = os.path.join(HERE, 'resources')
+    cmd_def = _ui.commandDefinitions.addButtonDefinition(cid, name, tip, res if os.path.isdir(res) else '')
+    h = handler_cls()
+    cmd_def.commandCreated.add(h)
+    _handlers.append(h)
+    panel = _ui.allToolbarPanels.itemById(PANEL_ID)
+    if panel:
+        old = panel.controls.itemById(cid)
+        if old:
+            old.deleteMe()
+        ctl = panel.controls.addCommand(cmd_def)
+        ctl.isPromotedByDefault = True
+        ctl.isPromoted = True
+
+
 def run(context):
     global _app, _ui
     try:
         _app = adsk.core.Application.get()
         _ui = _app.userInterface
         importlib.reload(E)
-        cmd_def = _ui.commandDefinitions.itemById(CMD_ID)
-        if cmd_def:
-            cmd_def.deleteMe()
-        res = os.path.join(HERE, 'resources')
-        cmd_def = _ui.commandDefinitions.addButtonDefinition(CMD_ID, CMD_NAME, CMD_TIP,
-                                                             res if os.path.isdir(res) else '')
-        h = CreatedHandler()
-        cmd_def.commandCreated.add(h)
-        _handlers.append(h)
-        panel = _ui.allToolbarPanels.itemById(PANEL_ID)
-        if panel and not panel.controls.itemById(CMD_ID):
-            ctl = panel.controls.addCommand(cmd_def)
-            ctl.isPromotedByDefault = True
-            ctl.isPromoted = True
+        _add_command(CMD_ID, CMD_NAME, CMD_TIP, CreatedHandler)
+        _add_command(LAYOUT_ID, LAYOUT_NAME, LAYOUT_TIP, LayoutCreatedHandler)
     except Exception:
         if _ui:
             _ui.messageBox('Magnusson Box add-in failed to start:\n' + traceback.format_exc())
@@ -547,13 +697,14 @@ def run(context):
 def stop(context):
     try:
         panel = _ui.allToolbarPanels.itemById(PANEL_ID)
-        if panel:
-            ctl = panel.controls.itemById(CMD_ID)
-            if ctl:
-                ctl.deleteMe()
-        cmd_def = _ui.commandDefinitions.itemById(CMD_ID)
-        if cmd_def:
-            cmd_def.deleteMe()
+        for cid in (CMD_ID, LAYOUT_ID):
+            if panel:
+                ctl = panel.controls.itemById(cid)
+                if ctl:
+                    ctl.deleteMe()
+            cmd_def = _ui.commandDefinitions.itemById(cid)
+            if cmd_def:
+                cmd_def.deleteMe()
         _handlers.clear()
     except Exception:
         pass

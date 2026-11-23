@@ -8,7 +8,10 @@ Generator for 3D-printable boxes that fit the Magnusson Compartment Organiser Ca
   - Downloads use `window.claude.use('downloads')` when running as a claude.ai artifact, and a normal Blob link anywhere else.
 - **Fusion 360 add-in** (`fusion-addin/MagnussonBoxGenerator/`)
   - `mbox_engine.py`: Fusion API geometry. `build`, `build_split`, `slot_dims`, `CASE`, `position_params`.
-  - `MagnussonBoxGenerator.py`: command dialog with Box / Corners / Inside / Tray / Extras tabs, plus STEP export.
+  - `MagnussonBoxGenerator.py`: two commands in Solid > Create.
+    - **Magnusson Box** builds one box: a dialog with Box / Corners / Inside / Tray / Extras tabs, plus STEP/STL export.
+    - **Organiser Layout** builds every box from `organiser-layout.json`, which the web app writes with `exportLayout()`. The file holds `{boxes: [{name, params, offset}]}`, where `params` is the same as `paramsFor()` and `offset` is `placement()`.
+  - Installed in `~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns/MagnussonBoxGenerator`, with run on startup turned on.
 
 ## Case and box facts (mm)
 - Standard cell is 66.5 wide × 64.5 long. 5 columns C1–C5; rows 1 (back) to 3 (front).

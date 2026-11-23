@@ -446,7 +446,7 @@ def divider_fractions(ratios, count):
     return out
 
 
-def build(design, params, occ_offset=None):
+def build(design, params, occ_offset=None, parent=None):
     """Create a new component containing the box (and optional tray / mount).
     Returns (occurrence, warnings)."""
     p = default_params()
@@ -458,7 +458,7 @@ def build(design, params, occ_offset=None):
         p['cells'] = list(p['cells'])
         p['cells'][0] -= p['end_clearance']
         p['cells'][-1] -= p['end_clearance']
-    root = design.rootComponent
+    root = parent or design.rootComponent
     mtx = adsk.core.Matrix3D.create()
     if occ_offset is not None:
         # set at creation time - moving an occurrence afterwards needs a snapshot in parametric designs
@@ -835,7 +835,7 @@ def position_params(col, front_row, n):
             'rail_notches': True, 'slots': 'every'}
 
 
-def build_split(design, params, occ_offset=None):
+def build_split(design, params, occ_offset=None, parent=None):
     """Build a span either as one box or, with params['separate'], as separate boxes
     (one component each) laid out along Y. Returns (occurrences, warnings)."""
     p = default_params()
@@ -843,7 +843,7 @@ def build_split(design, params, occ_offset=None):
     fr = divider_fractions(p.get('divider_ratios', ''), p['dividers'])
     off = occ_offset or (0.0, 0.0)
     if not p.get('separate') or not fr:
-        occ, w = build(design, params, off)
+        occ, w = build(design, params, off, parent)
         return [occ], w
     cells = [float(c) for c in p['cells'] if float(c) > 0]
     ec = max(0.0, p['end_clearance'])
@@ -887,7 +887,7 @@ def build_split(design, params, occ_offset=None):
                   'corners': corners,
                   'name': '%s piece %d%s' % (p['name'] or 'Magnusson Box', i + 1, (' ' + own) if own else ''),
                   '_joins': [j - y0 for j in joins if y0 - nw < j < y1 + nw], '_centres': cs})
-        occ, w = build(design, q, (off[0], off[1] + y0))
+        occ, w = build(design, q, (off[0], off[1] + y0 - ec), parent)
         occs.append(occ)
         warns += ['Piece %d: %s' % (i + 1, x) for x in w]
     return occs, warns
