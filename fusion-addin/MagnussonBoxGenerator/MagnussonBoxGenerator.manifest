@@ -1,0 +1,13 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "addin",
+	"id": "6b1d4f0e-8f8c-4b7e-9a8b-3e5a2c9d7f41",
+	"author": "",
+	"description": {
+		"": "Builds custom boxes, half-height tray inserts and wall mounts for the Magnusson compartment organiser case (Screwfix 850JC)."
+	},
+	"version": "1.0.0",
+	"runOnStartup": true,
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}
