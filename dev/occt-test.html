@@ -17,7 +17,7 @@
 <body>
 <div id="view"></div>
 <aside>
-  <h3 style="margin-top:0">OpenCascade stage 1</h3>
+  <h3 style="margin-top:0">OpenCascade stage 2</h3>
   <div id="btns"></div>
   <pre id="out">Loading…</pre>
 </aside>
@@ -49,42 +49,54 @@ function show(shape) {
   return m.triangles.length / 3;
 }
 const CASES = [
-  ['standard 1 cell', {}],
-  ['3 cells, rail indents', { cells: [64.5, 64.5, 64.5] }],
-  ['C2 front (handle notch)', G.positionParams('C2', 3, 1)],
-  ['C1 back (case corner)', G.positionParams('C1', 1, 1)],
+  ['plain body (stage 1)', {}, 'body'],
+  ['standard box with slots', {}],
+  ['3 cells, 2 dividers, label', { cells: [64.5, 64.5, 64.5], dividers: 2, label: 'front', label_text: 'M3 BOLTS' }],
+  ['C2 front, handle notch', G.positionParams('C2', 3, 1)],
+  ['C1 back, case corner, embossed back label', Object.assign(G.positionParams('C1', 1, 1), { label: 'back', label_text: 'TAPE', label_style: 'emboss' })],
   ['front corner DL', G.positionParams('DL', 3, 1)],
-  ['wall 2.5 mm', { wall: 2.5 }],
+  ['2 cells, tray (grid) + wall mount', { cells: [64.5, 64.5], tray: true, wall_mount: true }],
+  ['wall 2.5, 3 across', { wall: 2.5, divider_cols: 2 }],
 ];
 const built = {};
 window.T = { results: [], built, OC, G };
+const sum = (o, k) => o[k] ? o[k].volume() : 0;
 (async () => {
   try {
     const k = await OC.initOCCT(log);
     log(`kernel ready in ${k.seconds.toFixed(1)} s`);
-    for (const [name, prm] of CASES) {
+    for (const [name, prm, mode] of CASES) {
       try {
-        const r = OC.buildBody(G, prm);
-        const vOC = OC.volume(r.body);
-        // the flat-face engine, body only (no slots) for a like-for-like comparison
-        const ref = G.build(Object.assign({}, prm, { slots: 'none' })).box.volume();
-        const row = { name, seconds: +r.seconds.toFixed(2), volOCC: +vOC.toFixed(1), volMesh: +ref.toFixed(1), diffPct: +((vOC - ref) / ref * 100).toFixed(2) };
-        T.results.push(row); built[name] = r.body;
-        log(`${name}: ${row.seconds}s  OCC ${row.volOCC}  mesh ${row.volMesh}  (${row.diffPct}%)`);
+        const t0 = performance.now();
+        let shapes, ref;
+        if (mode === 'body') {
+          shapes = { box: OC.buildBody(G, prm).body };
+          ref = { box: G.build(Object.assign({}, prm, { slots: 'none' })).box };
+        } else { shapes = OC.build(G, prm); ref = G.build(prm); }
+        const secs = (performance.now() - t0) / 1000;
+        const parts = ['box', 'tray', 'mount'].filter(x => shapes[x]);
+        const row = { name, seconds: +secs.toFixed(2) };
+        for (const x of parts) {
+          const v = OC.volume(shapes[x]), r = sum(ref, x);
+          row[x] = `${(v / 1000).toFixed(2)} vs ${(r / 1000).toFixed(2)} cm3 (${((v - r) / r * 100).toFixed(2)}%)`;
+        }
+        T.results.push(row); built[name] = shapes;
+        log(`${name}: ${row.seconds}s\n   ` + parts.map(x => x + ' ' + row[x]).join('\n   '));
         const b = document.createElement('button'); b.textContent = name;
-        b.onclick = () => log(`${name}: ${show(r.body)} display triangles`);
+        b.onclick = () => log(`${name}: ${show(shapes.box)} display triangles`);
         document.getElementById('btns').appendChild(b);
-      } catch (e) { T.results.push({ name, error: String(e && e.message || e) }); log(`${name}: FAILED ${e && e.message || e}`); }
+      } catch (e) { T.results.push({ name, error: String(e && e.message || e) }); log(`${name}: FAILED ${e && e.message || e}`); console.error(e); }
     }
-    const first = built[CASES[0][0]];
-    if (first) {
-      log(`display triangles: ${show(first)}`);
-      const step = await OC.stepBlob(first), txt = await step.text();
-      T.step = { bytes: step.size, cylinders: (txt.match(/CYLINDRICAL_SURFACE/g) || []).length, planes: (txt.match(/\bPLANE\(/g) || []).length,
-                 cones: (txt.match(/CONICAL_SURFACE/g) || []).length, bsplines: (txt.match(/B_SPLINE_SURFACE/g) || []).length };
-      log('STEP: ' + JSON.stringify(T.step));
-      const d = document.createElement('button'); d.textContent = 'Download STEP (standard box)';
-      d.onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(step); a.download = 'occt-test-box.step'; a.click(); };
+    const pick = built['2 cells, tray (grid) + wall mount'] || built['standard box with slots'];
+    if (pick) {
+      log(`display triangles: ${show(pick.box)}`);
+      const parts = ['box', 'tray', 'mount'].filter(x => pick[x]).map(x => ({ shape: pick[x], name: x }));
+      const step = OC.stepFile(parts), txt = await step.text();
+      T.step = { bytes: step.size, solids: (txt.match(/MANIFOLD_SOLID_BREP/g) || []).length, cylinders: (txt.match(/CYLINDRICAL_SURFACE/g) || []).length,
+        cones: (txt.match(/CONICAL_SURFACE/g) || []).length, planes: (txt.match(/\bPLANE\(/g) || []).length, bsplines: (txt.match(/B_SPLINE_SURFACE/g) || []).length };
+      log('STEP (tray + mount box): ' + JSON.stringify(T.step));
+      const d = document.createElement('button'); d.textContent = 'Download STEP (box + tray + mount)';
+      d.onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(step); a.download = 'occt-stage2.step'; a.click(); };
       document.getElementById('btns').appendChild(d);
     }
     T.done = true; log('done');

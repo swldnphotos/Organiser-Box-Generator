@@ -457,8 +457,8 @@
     '%': [[[0, 0], [4, 6]], [[0.5, 5], [1, 5.5]], [[3, 0.5], [3.5, 1]]],
     '&': [[[4, 0], [1, 4], [1, 5], [2, 6], [3, 5], [3, 4], [0, 1.5], [1, 0], [2.5, 0], [4, 2]]],
   };
-  function textStrokes(text, height, x0, y0, z0, z1, maxW) {
-    // returns {tools, width} for text centred at x0, baseline y0
+  // label text as 2D stroke quads (shared by both engines): {quads, height} for text centred at x0, baseline y0
+  function textQuads(text, height, x0, y0, maxW) {
     text = text.toUpperCase().replace(/[^A-Z0-9\-+.,:/#'()X%& ]/g, '');
     let h = height;
     const advance = 5.4; // grid units per char
@@ -466,7 +466,7 @@
     while (h > 2 && widthFor(h) > maxW) h -= 0.25;
     const s = h / 6, sw = Math.max(0.6, 0.85 * s);
     const tw = widthFor(h);
-    const tools = [];
+    const quads = [];
     let cx = x0 - tw / 2;
     for (const ch of text) {
       const g = FONT[ch];
@@ -477,13 +477,17 @@
           const l = Math.hypot(d[0], d[1]);
           if (l < 1e-6) d = [1, 0]; else d = [d[0] / l, d[1] / l];
           const n = [-d[1] * sw / 2, d[0] * sw / 2], e = [d[0] * sw / 2, d[1] * sw / 2];
-          tools.push(prism('z', z0, z1, [[a[0] - e[0] - n[0], a[1] - e[1] - n[1]], [b[0] + e[0] - n[0], b[1] + e[1] - n[1]],
-            [b[0] + e[0] + n[0], b[1] + e[1] + n[1]], [a[0] - e[0] + n[0], a[1] - e[1] + n[1]]]));
+          quads.push([[a[0] - e[0] - n[0], a[1] - e[1] - n[1]], [b[0] + e[0] - n[0], b[1] + e[1] - n[1]],
+            [b[0] + e[0] + n[0], b[1] + e[1] + n[1]], [a[0] - e[0] + n[0], a[1] - e[1] + n[1]]]);
         }
       }
       cx += advance * s;
     }
-    return { tools, height: h };
+    return { quads, height: h };
+  }
+  function textStrokes(text, height, x0, y0, z0, z1, maxW) {
+    const r = textQuads(text, height, x0, y0, maxW);
+    return { tools: r.quads.map(q => prism('z', z0, z1, q)), height: r.height };
   }
 
   // divider positions as fractions of the inner length: from relative sizes ("1, 1, 2") or an even count
@@ -1024,7 +1028,7 @@
     return { width: 66.5, cells: span.map(c => c.len), corners, rail_notches: true, slots: 'every' };
   }
 
-  const API = { buildSplit, dividerFractions, CASE, FRONT_CORNER, positionParams, envelope, CSG, V3, build, defaultParams, STD_CORNER, toBinarySTL, toSTEP, toBrep, makeZip, prism, box, planVertices, planPoints };
+  const API = { buildSplit, dividerFractions, CASE, FRONT_CORNER, positionParams, envelope, CSG, V3, build, defaultParams, STD_CORNER, toBinarySTL, toSTEP, toBrep, makeZip, prism, box, planVertices, planPoints, textQuads, SLOT, slotDims };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else root.MBG = API;
 })(typeof self !== 'undefined' ? self : this);
