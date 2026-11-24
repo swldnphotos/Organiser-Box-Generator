@@ -62,14 +62,18 @@ function planDrawing(verts) {
 }
 
 // Same envelope as geometry.js: tapered from the base up to taper_height, straight above.
+// A corner rounding that shrinks to nothing at the bottom of the taper would leave the two outlines with different
+// edge counts, which the loft can't pair up reliably, so the lower outline keeps a tiny 0.05 mm arc there instead.
 function envelope(G, p, L, inset, z0, ztop) {
-  const sk = (ins, z) => planDrawing(G.planVertices(p.width, L, p.corners, ins)).sketchOnPlane('XY', z);
+  const verts = ins => G.planVertices(p.width, L, p.corners, ins);
+  const sk = (vs, z) => planDrawing(vs).sketchOnPlane('XY', z);
   if (p.taper_inset > 0.01 && p.taper_height > 0.5) {
-    const lower = sk(inset + p.taper_inset, z0).loftWith(sk(inset, z0 + p.taper_height), { ruled: true });
-    const upper = sk(inset, z0 + p.taper_height).extrude(ztop - z0 - p.taper_height);
+    const top = verts(inset), bot = verts(inset + p.taper_inset).map((v, i) => [v[0], top[i][1] > 0.02 ? Math.max(v[1], 0.05) : v[1]]);
+    const lower = sk(bot, z0).loftWith(sk(verts(inset), z0 + p.taper_height), { ruled: true });
+    const upper = sk(verts(inset), z0 + p.taper_height).extrude(ztop - z0 - p.taper_height);
     return lower.fuse(upper);
   }
-  return sk(inset, z0).extrude(ztop - z0);
+  return sk(verts(inset), z0).extrude(ztop - z0);
 }
 
 function prismZ(pts, z0, z1) {
@@ -109,6 +113,15 @@ function planPrism(G, p, L, inset, z0, z1) {
 // Returns { box, tray?, mount?, warnings, L } with OpenCascade shapes.
 export function build(G, params, progress) {
   if (!R) throw new Error('Call initOCCT() first.');
+  let stage = 'Starting';
+  try { return buildInner(G, params, m => { stage = m; if (progress) progress(m); }); }
+  catch (e) {
+    let msg = e && e.message;
+    if (!msg && R.OC && typeof e === 'object' && 'excPtr' in e) msg = 'OpenCascade error';
+    throw new Error(stage + ' failed: ' + (msg || String(e)));
+  }
+}
+function buildInner(G, params, progress) {
   const SLOT = G.SLOT;
   const p = Object.assign(G.defaultParams(), params || {});
   p.cells = (p.cells || []).map(Number).filter(v => v > 0);
