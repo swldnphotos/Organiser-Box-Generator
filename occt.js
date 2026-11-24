@@ -5,7 +5,7 @@
 // Stage 1: the box body - tapered outer envelope with exact corner arcs, hollowed inside, rail indents.
 
 const CDN = 'https://cdn.jsdelivr.net/npm/';
-export const VERSIONS = { replicad: '', oc: '' };   // filled in from the CDN once pinned; '' = latest
+export const VERSIONS = { replicad: '1.2.1', oc: '1.2.1' };   // pinned; the kernel WebAssembly is about 23 MB before compression
 
 let R = null, ready = null;
 
@@ -17,11 +17,11 @@ export function initOCCT(onStatus) {
     onStatus && onStatus('Downloading the CAD kernel…');
     const v = s => (s ? '@' + s : '');
     const [{ default: opencascade }, replicad] = await Promise.all([
-      import(CDN + 'replicad-opencascadejs' + v(VERSIONS.oc) + '/src/replicad_single.js'),
+      import(CDN + 'replicad-opencascadejs' + v(VERSIONS.oc) + '/dist/replicad_single.js'),
       import(CDN + 'replicad' + v(VERSIONS.replicad) + '/+esm'),
     ]);
     onStatus && onStatus('Starting the CAD kernel…');
-    const OC = await opencascade({ locateFile: () => CDN + 'replicad-opencascadejs' + v(VERSIONS.oc) + '/src/replicad_single.wasm' });
+    const OC = await opencascade({ locateFile: () => CDN + 'replicad-opencascadejs' + v(VERSIONS.oc) + '/dist/replicad_single.wasm' });
     replicad.setOC(OC);
     R = replicad;
     return { seconds: (performance.now() - t0) / 1000 };
