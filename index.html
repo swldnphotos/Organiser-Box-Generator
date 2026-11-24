@@ -756,7 +756,7 @@ async function rebuild() {
     const pieces = cache.get(j.key), off = placement(j.box);
     for (const pc of pieces) {
       for (const w of pc.res.warnings) warns.push(`${boxName(j.box)}: ${w}`);
-      out.push({ box: j.box, res: pc.res, label: pc.label, piece: pieces.length > 1 ? pc.index + 1 : 0, off: [off[0], off[1] + pc.y0 - (pieces.length > 1 ? (j.box.o.end_clearance || 0) : 0)] });
+      out.push({ box: j.box, res: pc.res, params: pc.params, label: pc.label, piece: pieces.length > 1 ? pc.index + 1 : 0, off: [off[0], off[1] + pc.y0 - (pieces.length > 1 ? (j.box.o.end_clearance || 0) : 0)] });
     }
   }
   if (id !== buildId) return;
@@ -778,11 +778,37 @@ $('download').addEventListener('click', () => {
   const bs = new Set(selectedBoxes());
   downloadItems(built.filter(i => !bs.size || bs.has(i.box)), $('fmt').value);
 });
+// STEP files come from the OpenCascade engine (occt.js) so curves and fillets are exact. The kernel (a large
+// WebAssembly file) loads the first time STEP is chosen; if it can't, STEP falls back to the flat-faced exporter.
+let exactMod = null, exactFailed = false;
+const exactCache = new WeakMap();
+async function loadExact() {
+  if (exactMod) return exactMod;
+  if (exactFailed) return null;
+  try {
+    const m = await import('./occt.js');
+    await m.initOCCT(msg => { $('busy').textContent = msg + ' (first STEP export only)'; });
+    return (exactMod = m);
+  } catch (e) {
+    exactFailed = true; console.error(e);
+    $('status').textContent = 'Could not load the CAD kernel, so STEP files use flat faces this time.';
+    return null;
+  }
+}
+function exactParts(m, it) {
+  if (exactCache.has(it)) return exactCache.get(it);
+  let r = null;
+  try { r = m.build(G, it.params); } catch (e) { console.error(e); r = null; }
+  exactCache.set(it, r);
+  return r;
+}
 async function downloadItems(items, fmt) {
   if (!items.length) return;
   if (!downloads) { $('status').textContent = 'Downloads are not available in this view. Open the page on claude.ai to save files.'; return; }
   const files = [], wantStl = fmt !== 'step', wantStep = fmt !== 'stl';
   $('busy').classList.add('on');
+  let exact = null, flatSteps = 0;
+  if (wantStep) exact = await loadExact();
   try {
     for (const [n, it] of items.entries()) {
       const base = (it.label || '').trim().replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '');
@@ -793,7 +819,11 @@ async function downloadItems(items, fmt) {
         if (wantStep) {
           $('busy').textContent = `Writing STEP ${n + 1} of ${items.length}…`;
           await new Promise(r => setTimeout(r, 0));
-          files.push({ name: `${tag}_${k}.step`, data: G.toSTEP([{ name: `${tag}_${k}`, csg: it.res[k] }], `${tag}_${k}.step`).data });
+          const ex = exact && exactParts(exact, it);
+          if (exact && !(ex && ex[k])) flatSteps++;
+          const data = ex && ex[k] ? new Uint8Array(await exact.stepFile([{ shape: ex[k], name: `${tag}_${k}` }]).arrayBuffer())
+            : G.toSTEP([{ name: `${tag}_${k}`, csg: it.res[k] }], `${tag}_${k}.step`).data;
+          files.push({ name: `${tag}_${k}.step`, data });
         }
       }
     }
@@ -801,7 +831,8 @@ async function downloadItems(items, fmt) {
   const zipName = items.length > 1 ? `magnusson_${items.length}_pieces.zip` : `magnusson_${boxTag(items[0].box)}${items[0].piece ? '_p' + items[0].piece : ''}.zip`;
   try {
     await downloads.save({ filename: zipName, data: new Blob([G.makeZip(files)]) });
-    $('status').textContent = `Saved ${files.length} file${files.length > 1 ? 's' : ''} in a zip.`;
+    $('status').textContent = `Saved ${files.length} file${files.length > 1 ? 's' : ''} in a zip.` +
+      (flatSteps ? ` ${flatSteps} STEP file${flatSteps > 1 ? 's' : ''} used flat faces because the exact build failed.` : '');
   } catch (e) { $('status').textContent = e && e.code === 'declined' ? 'Download cancelled.' : 'Download failed: ' + (e && (e.message || e.code)); }
 }
 // ordinary browser download, used when the page is hosted anywhere other than claude.ai

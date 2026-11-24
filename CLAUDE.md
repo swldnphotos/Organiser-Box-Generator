@@ -6,6 +6,11 @@ Generator for 3D-printable boxes that fit the Magnusson Compartment Organiser Ca
   - `index.html`: UI with the case map, the three.js preview (importmap, three 0.160 from jsDelivr), the right-click/long-press menu, a phone split layout, and localStorage key `mbg-layout`.
   - `geometry.js`: pure-JS BSP CSG engine. `build`, `buildSplit` (separate boxes), `toBinarySTL`, `toSTEP`/`toBrep` (planar B-rep: welds vertices, fixes T-junctions, merges coplanar faces) and `makeZip`. Works in both the browser and Node (`module.exports`).
   - Downloads use `window.claude.use('downloads')` when running as a claude.ai artifact, and a normal Blob link anywhere else.
+  - `occt.js`: the OpenCascade engine (replicad 1.2.1, loaded from jsDelivr), used for STEP downloads so curves are exact cylinders and cones.
+    - `build(G, params)` mirrors `geometry.js` `build()` step by step and returns `{box, tray, mount}`.
+    - The kernel (about 23 MB of WebAssembly) loads the first time STEP is chosen. If it fails, STEP falls back to `G.toSTEP` (flat faces).
+    - `dev/occt-test.html` compares the two engines' volumes on test boxes; they agree to within 0.05%.
+    - A geometry change must now be made in three places: `geometry.js`, `occt.js` and `mbox_engine.py`.
 - **Fusion 360 add-in** (`fusion-addin/MagnussonBoxGenerator/`)
   - `mbox_engine.py`: Fusion API geometry. `build`, `build_split`, `slot_dims`, `CASE`, `position_params`.
   - `MagnussonBoxGenerator.py`: two commands in Solid > Create.

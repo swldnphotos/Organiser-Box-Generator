@@ -719,7 +719,7 @@
   function buildSplit(params, progress) {
     const p = Object.assign(defaultParams(), params || {});
     let fr = dividerFractions(p.divider_ratios, p.dividers);
-    if (!p.separate || !fr.length) return [{ res: build(params, progress), y0: 0, index: 0, label: p.label === 'none' ? '' : (p.label_text || '') }];
+    if (!p.separate || !fr.length) return [{ res: build(params, progress), params: Object.assign({}, params), y0: 0, index: 0, label: p.label === 'none' ? '' : (p.label_text || '') }];
     const cellsIn = (p.cells || []).map(Number).filter(v => v > 0);
     const ec = p.end_clearance > 0 ? p.end_clearance : 0, gap = p.split_gap > 0 ? p.split_gap : 0;
     const Lfull = cellsIn.reduce((a, b) => a + b, 0);
@@ -754,7 +754,7 @@
       if (L < 20) throw new Error('A separate box would be under 20 mm long; use fewer or larger compartments.');
       const res = build(q, progress);
       if (p.slots !== 'none' && !cs.length && p.height >= SLOT.min_height) res.warnings.push('Piece ' + (i + 1) + ' is too short for a hanging slot.');
-      out.push({ res, y0, index: i, label: q.label === 'none' ? '' : lt });
+      out.push({ res, params: q, y0, index: i, label: q.label === 'none' ? '' : lt });
     }
     return out;
   }
