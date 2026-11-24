@@ -12,7 +12,7 @@
   button { font: inherit; padding: 6px 10px; margin: 0 6px 6px 0; border-radius: 6px; border: 1px solid #555; background: #2a2926; color: #eee; cursor: pointer; }
 </style>
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }</script>
-<script src="../geometry.js"></script>
+<script>document.write('<script src="../geometry.js?v=' + Date.now() + '"><\/script>')</script>
 </head>
 <body>
 <div id="view"></div>
@@ -24,7 +24,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import * as OC from '../occt.js';
+const OC = await import('../occt.js?v=' + Date.now());
 const G = window.MBG, out = document.getElementById('out');
 const log = s => { out.textContent += s + '\n'; console.log('[occt]', s); };
 out.textContent = '';
@@ -63,6 +63,7 @@ window.T = { results: [], built, OC, G };
 const sum = (o, k) => o[k] ? o[k].volume() : 0;
 (async () => {
   try {
+    log('occt.js build: ' + (OC.BUILD || 'old'));
     const k = await OC.initOCCT(log);
     log(`kernel ready in ${k.seconds.toFixed(1)} s`);
     for (const [name, prm, mode] of CASES) {

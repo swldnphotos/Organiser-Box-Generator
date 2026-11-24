@@ -5,6 +5,7 @@
 // Stage 1: the box body - tapered outer envelope with exact corner arcs, hollowed inside, rail indents.
 
 const CDN = 'https://cdn.jsdelivr.net/npm/';
+export const BUILD = '2026-11-24 loft-fix';
 export const VERSIONS = { replicad: '1.2.1', oc: '1.2.1' };   // pinned; the kernel WebAssembly is about 23 MB before compression
 
 let R = null, ready = null;
